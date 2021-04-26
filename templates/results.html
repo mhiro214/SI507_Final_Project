@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF8"/>
+    <title>Investor's Assistance Tool: Results</title>
+    <style>
+        table.overview{
+            border-spacing: 0;
+            }
+        table.overview th{
+            border-bottom: solid 2px #fb5144;
+            padding: 10px 10px;
+            }
+        table.overview td{
+            border-bottom: solid 2px #ddd;
+            padding: 10px 10px;
+            }
+
+        table.news{
+            border-spacing: 0;
+            }
+        table.news th{
+            border-bottom: solid 2px #fb5144;
+            padding: 10px 10px;
+            }
+        table.news td{
+            border-bottom: solid 2px #ddd;
+            padding: 5px 10px;
+            }
+    </style>
+</head>
+<body>
+    {% if list_overview == ["Alpha limit"] %}
+    <h2>No results (You may have reached the Alpha Vantage API access limit, try again after a minute.)</h2>
+    {% elif list_overview == ["Twitter limit"] %}
+    <h2>No results (You may have reached the Twitter API access limit, try again after 15 minutes.)</h2>
+    {% else %}
+    <h2>Company Overview</h2>
+    <table class="overview">
+        <tr>
+            <th>Code</th>
+            <td>&nbsp;{{list_overview[0]}}</td>
+        </tr>
+        <tr>
+            <th>Name</td>
+            <td>&nbsp;{{list_overview[1]}}</td>
+        </tr>
+        <tr>
+            <th>Industry</td>
+            <td>&nbsp;{{list_overview[2]}}</td>
+        </tr>
+        <tr>
+            <th>Address</td>
+            <td>&nbsp;{{list_overview[3]}}</td>
+        </tr>
+    </table>
+    <BR>
+    <BR>
+    <h2>Historical Charts</h2>
+    {{div | safe}}
+    <table class='plot' width="100%">
+        <tr>
+            <td width="50%">{{div | safe}}</td>
+            <td width="50%">{{div | safe}}</td>
+        </tr>
+    </table>
+    <BR>
+    <BR>
+    <h2>News List</h2>
+    {% if len_newslist == 0 %}
+    <p>No results</p>
+    {% else %}
+    <table class='news'>
+        <tr>
+            <th>Headline</th>
+            <th>Sentiment Score</th>
+        </tr>
+        {%for i in range(len_newslist)%}
+        <tr>
+            <td><a href={{list_newslist[1][i]}}>{{list_newslist[0][i]}}</a></td>
+            <td align="center">{{'%0.2f'|format(list_newslist[2][i]|float)}}</td>
+        </tr>
+        {%endfor%}
+    </table>
+    {% endif %}
+    {% endif %}
+</body>
+</html>

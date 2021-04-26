@@ -1,0 +1,88 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF8"/>
+    <title>Investor's Assistance Tool</title>
+    <style>
+        .notes {
+            position: relative;
+            margin: 2em 0;
+            padding: 25px 10px 7px;
+            border: solid 2px gray;
+        }
+        .notes .notes-title {
+            position: absolute;
+            display: inline-block;
+            top: -2px;
+            left: -2px;
+            padding: 0 9px;
+            height: 25px;
+            line-height: 25px;
+            font-size: 24px;
+            background: gray;
+            color: #ffffff;
+            font-weight: bold;
+        }
+        .notes p {
+            margin: 0; 
+            padding: 0;
+        }
+        li {
+        padding: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Welcome to Investor's Assistance Tool!</h1>
+    <p>Select a company code from the drop-down menu below.</p>
+    <form action='/results' method='POST'>
+        <select name='Code'>
+            <option value="AAPL">AAPL</option>
+            <option value='ABNB'>ABNB</option>
+            <option value='ADBE'>ADBE</option>
+            <option value='AMAT'>AMAT</option>
+            <option value='AMD'>AMD</option>
+            <option value='AMGN'>AMGN</option>
+            <option value="AMZN">AMZN</option>
+            <option value='AVGO'>AVGO</option>
+            <option value='CHTR'>CHTR</option>
+            <option value='CMCSA'>CMCSA</option>
+            <option value='COST'>COST</option>
+            <option value='CSCO'>CSCO</option>
+            <option value='FB'>FB</option>
+            <option value='GILD'>GILD</option>
+            <option value='GOOG'>GOOG</option>
+            <option value='INTC'>INTC</option>
+            <option value='INTU'>INTU</option>
+            <option value='ISRG'>ISRG</option>
+            <option value="MSFT">MSFT</option>
+            <option value='MU'>MU</option>
+            <option value='NFLX'>NFLX</option>
+            <option value='NVDA'>NVDA</option>
+            <option value='PEP'>PEP</option>
+            <option value='PYPL'>PYPL</option>
+            <option value='QCOM'>QCOM</option>
+            <option value='SBUX'>SBUX</option>
+            <option value='TMUS'>TMUS</option>
+            <option value='TSLA'>TSLA</option>
+            <option value='TXN'>TXN</option>
+            <option value='ZM'>ZM</option>
+        </select>
+        <input type='submit' value='Submit'/>
+    </form>
+    <BR>
+    <BR>
+    <div class="notes">
+        <span class="notes-title">Notes</span>
+        <ul>
+            <li>Available companies: <a href='https://disfold.com/top-companies-us-nasdaq/'>Top 30 US companies in the NASDAQ index 2021</a></li>
+            <li>Sentiment score calculation method: (# Positive words - # Negative words) / (# Positive words + # Negative words)</li>
+            <li>Word lists used for score calculation: <a href='https://sraf.nd.edu/textual-analysis/resources/#LM%20Sentiment%20Word%20Lists'>Loughran-McDonald Sentiment Word Lists</a></li>
+            <li>Due to restrictions on Web API access, please do not use it continuously. (Up to about 2 accesses per minute & up to about 20 accesses per 15 minutes)</li>
+            <li>Some companies may not have a News List. In that case, the message "No results" will be displayed.</li>            
+        </ul>
+    </div>
+
+</body>
+</html>

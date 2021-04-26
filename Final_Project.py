@@ -13,12 +13,15 @@ import datetime
 from pytz import timezone
 import sqlite3
 import time
+from flask import Flask, render_template, request
+import plotly.graph_objs as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 
 import secrets as secrets # file that contains your OAuth credentials
 
 
 CACHE_FILENAME = "cache.json"
-CACHE_DICT = {}
 
 
 client_key = secrets.TWITTER_API_KEY
@@ -32,6 +35,9 @@ oauth = OAuth1(client_key,
             resource_owner_secret=access_token_secret)
 
 Alpha_API = secrets.ALPHA_API_KEY
+
+
+#################### [START] Helper functions ####################
 
 def open_cache():
     ''' Opens the cache file if it exists and loads the JSON into
@@ -127,12 +133,14 @@ def get_tweets(code, since, until):
         print("making new request")
         list_tweet_text = list()
         tweet_data = make_request(baseurl, params, oauth)
-        list_tweets = tweet_data['statuses']
-
-        for tweet in list_tweets:
-            list_tweet_text.append(tweet['full_text'].replace("\n", " "))
-        CACHE_DICT[key] = list_tweet_text        
-        return list_tweet_text
+        if "errors" in tweet_data.keys():
+            return []
+        else:
+            list_tweets = tweet_data['statuses']
+            for tweet in list_tweets:
+                list_tweet_text.append(tweet['full_text'].replace("\n", " "))
+            CACHE_DICT[key] = list_tweet_text        
+            return list_tweet_text
 
 
 def sentiment(list_sentences, positive_list, negative_list):
@@ -243,7 +251,9 @@ def article(url):
     html = requests.get(url)
     html_text = html.text
     soup = BeautifulSoup(html_text, 'html.parser')
-    paragraphs = soup.find_all('p', class_="Paragraph-paragraph-2Bgue ArticleBody-para-TD_9x")
+    paragraphs = soup.find_all('div', class_="ArticleBody__container___D-h4BJ")
+    if paragraphs == []:
+        paragraphs = soup.find_all('div', class_="ArticleBodyWrapper")
 
     list_paragraphs = list()
 
@@ -276,8 +286,9 @@ def news_list_with_sentiment(code, positive_list, negative_list):
         print("making new request")
         dict_news = news_list(code)
         for k, v in dict_news.items():
-            sentiment_score = sentiment(article(v), positive_list, negative_list)
-            dict_news[k] = (v, sentiment_score[0])
+            text = article(v)
+            sentiment_score = sentiment(text, positive_list, negative_list)
+            dict_news[k] = (v, sentiment_score[0], text)
         CACHE_DICT[key] = dict_news
         return dict_news
 
@@ -308,62 +319,125 @@ def get_alpha(code, function):
     
     else:
         print('making new request')
-        CACHE_DICT[key] = make_request(baseurl, params, oauth=None)
-        return CACHE_DICT[key]
+        stock_dict = make_request(baseurl, params, oauth=None)
+        if 'Note' not in stock_dict.keys():
+            CACHE_DICT[key] = stock_dict
+        return stock_dict
 
+def get_df(code, source):
+    '''Make a dataframe 
+    
+    Parameters
+    ----------
+    code: string
+        Company code (e.g., AAPL)
+    source: string
+        Data source (twitter, news, stockprice or overview)
+    
+    Returns
+    -------
+    DataFrame
+        twitter -> columns=['Code', 'Date', 'Sentiment_Score']
+        news ->  columns=['Code', 'Headline', 'URL', 'Sentiment_Score', 'Text']
+        stockprice -> columns=['Code', 'Date', 'Stock_Price']
+        overview -> columns=['Code', 'Name', 'Industry', 'Address']
+    '''
 
-if __name__ == "__main__":
-
-    CACHE_DICT = open_cache()
-
-    # word list
-    # path = 'https://drive.google.com/uc?export=download&code=15UPaF2xJLSVz8DYuphierz67trCxFLcl'
-    path = "./LoughranMcDonald_SentimentWordLists_2018.xlsx"
-    df = pd.read_excel(path, sheet_name='Negative', header=None)
-    negative_list = list(df.to_numpy().flatten())
-    df = pd.read_excel(path, sheet_name='Positive', header=None)
-    positive_list = list(df.to_numpy().flatten())
-
-    # Twitter
-    current_time = datetime.datetime.now(timezone('US/Eastern'))
-    twitter_df = pd.DataFrame(columns=['Code', 'Date', 'Sentiment_Score'])
-    for code in ['AAPL', 'MSFT', 'AMZN']:
+    if source == "twitter":
+        current_time = datetime.datetime.now(timezone('US/Eastern'))
+        df_twitter = pd.DataFrame(columns=['Code', 'Date', 'Sentiment_Score'])
         sentiment_scores, date_list = weekly_sentiment_tweets(code, current_time, positive_list, negative_list)
         for i in range(7):
             df = pd.DataFrame({'Code': code, 'Date': date_list[i], 'Sentiment_Score': sentiment_scores[i]}, index=[0])
-            twitter_df = twitter_df.append(df, ignore_index=True)
-    
+            df_twitter = df_twitter.append(df, ignore_index=True)
+        return df_twitter
 
-    # news
-    newslist_df = pd.DataFrame(columns=['Code', 'Headline', 'URL', 'Sentiment_Score'])
-    for code in ['AAPL', 'MSFT', 'AMZN']:
+    elif source == "stockprice":
+        df_stockprice = pd.DataFrame(columns=['Code', 'Date', 'Stock_Price'])
+        stock_dict = get_alpha(code, "TIME_SERIES_DAILY")
+
+        if 'Note' in stock_dict.keys():
+            return df_stockprice
+        else:
+            stock_dict = stock_dict['Time Series (Daily)']
+            for k, v in stock_dict.items():
+                df = pd.DataFrame({'Code': code, 'Date': k, 'Stock_Price': float(v['4. close'])}, index=[0])
+                df_stockprice = df_stockprice.append(df, ignore_index=True)
+            return df_stockprice
+
+    elif source == "overview":
+        overview_dict = get_alpha(code, "OVERVIEW")
+        if 'Note' in overview_dict.keys():
+            df_stockprice = pd.DataFrame(columns=['Code', 'Name', 'Industry', 'Address'])            
+            return df_stockprice
+        else:
+            df_overview = pd.DataFrame({'Code': code, 'Name': overview_dict['Name'],
+            'Industry': overview_dict['Industry'], "Address": overview_dict['Address']}, index=[0])
+            return df_overview
+
+    elif source == "news":
+        df_newslist = pd.DataFrame(columns=['Code', 'Headline', 'URL', 'Sentiment_Score', 'Text'])
         news_dict = news_list_with_sentiment(code, positive_list, negative_list)
         for k, v in news_dict.items():
-            df = pd.DataFrame({'Code': code, 'Headline': k, 'URL':v[0], 'Sentiment_Score': v[1]}, index=[0])
-            newslist_df = newslist_df.append(df, ignore_index=True)
+            if v[2] != []:
+                df = pd.DataFrame({'Code': code, 'Headline': k, 'URL':v[0], 'Sentiment_Score': v[1], "Text": v[2]}, index=[0])
+                df_newslist = df_newslist.append(df, ignore_index=True)
+        return df_newslist
 
-    # Alpha Vantage 
-    stockprice_df = pd.DataFrame(columns=['Code', 'Date', 'Stock_Price'])
-    for code in ['AAPL', 'MSFT', 'AMZN']:
-        stcok_dict = get_alpha(code, "TIME_SERIES_DAILY")['Time Series (Daily)']
-        for k, v in stcok_dict.items():
-            df = pd.DataFrame({'Code': code, 'Date': k, 'Stock_Price': v['4. close']}, index=[0])
-            stockprice_df = stockprice_df.append(df, ignore_index=True)
+def plot_twitter(df_twitter):
+    ''' Make a bar graph of twitter sentiment scores
 
-    time.sleep(60) # Avoid access limit (5 calls per minute)
+    Parameters
+    ----------
+    df_twitter: DataFrame
+        columns=['Code', 'Date', 'Sentiment_Score']
+    
+    Returns
+    -------
+    fig
 
-    overview_df = pd.DataFrame(columns=['Code', 'Name', 'Industry', 'Address'])
-    for code in ['AAPL', 'MSFT', 'AMZN']:
-        overview_dict = get_alpha(code, "OVERVIEW")
-        df = pd.DataFrame({'Code': code, 'Name': overview_dict['Name'],
-         'Industry': overview_dict['Industry'], "Address": overview_dict['Address']}, index=[0])
-        overview_df = overview_df.append(df, ignore_index=True)
-        
+    '''
+    x_vals = df_twitter['Date']
+    y_vals = df_twitter['Sentiment_Score']
 
-    save_cache(CACHE_DICT)
+    data = go.Bar(x=x_vals, y=y_vals)
+    return data
 
+def plot_stockprice(df_stockprice):
+    ''' Make a line chart of stock prices
 
-    # Create a database
+    Parameters
+    ----------
+    df_stockprice: DataFrame
+        columns=['Code', 'Date', 'Stock_Price']
+    
+    Returns
+    -------
+    fig
+    '''
+    x_vals = df_stockprice['Date']
+    y_vals = df_stockprice['Stock_Price']
+    data = go.Scatter(x=x_vals, y=y_vals, mode='lines')
+    return data
+
+def create_database(df_overview, df_stockprice, df_twitter, df_newslist):
+    ''' Create a database from DataFrames 
+
+    Parameters
+    ----------
+    df_overview: DataFrame
+        columns=['Code', 'Name', 'Industry', 'Address']
+    df_stockprice: DataFrame
+        columns=['Code', 'Date', 'Stock_Price']
+    df_twitter: DataFrame
+        columns=['Code', 'Date', 'Sentiment_Score']
+    df_newslist: DataFrame
+        columns=['Code', 'Headline', 'URL', 'Sentiment_Score', 'Text']
+    
+    Returns
+    -------
+    None
+    '''
     dbname = 'Database.sqlite'
     conn = sqlite3.connect(dbname)
     cur = conn.cursor()
@@ -386,7 +460,8 @@ if __name__ == "__main__":
                             Code TEXT "FOREIGN KEY",
                             Headline TEXT NOT NULL,
                             URL TEXT NOT NULL,
-                            Sentiment_Score REAL NOT NULL)
+                            Sentiment_Score REAL NOT NULL,
+                            'Text' TEXT NOT NULL)
     """
     cur.execute(sql)
 
@@ -406,12 +481,85 @@ if __name__ == "__main__":
     """
     cur.execute(sql)
 
-    twitter_df.to_sql('twitter', conn, if_exists='append')
-    newslist_df.to_sql('newslist', conn, if_exists='append')
-    stockprice_df.to_sql('stockprice', conn, if_exists='append')
-    overview_df.to_sql('overview', conn, if_exists='append', index=False)
+    df_twitter.to_sql('twitter', conn, if_exists='append')
+    df_newslist.to_sql('newslist', conn, if_exists='append')
+    df_stockprice.to_sql('stockprice', conn, if_exists='append')
+    df_overview.to_sql('overview', conn, if_exists='append', index=False)
 
     cur.close()
     conn.close()
 
+
+
+#################### [END] Helper functions ####################
+
+# word list
+# path = 'https://drive.google.com/uc?export=download&code=15UPaF2xJLSVz8DYuphierz67trCxFLcl'
+path = "./LoughranMcDonald_SentimentWordLists_2018.xlsx"
+df = pd.read_excel(path, sheet_name='Negative', header=None)
+negative_list = list(df.to_numpy().flatten())
+df = pd.read_excel(path, sheet_name='Positive', header=None)
+positive_list = list(df.to_numpy().flatten())
+
+# Flask
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/results', methods=['POST'])
+def results():
+
+    Code = request.form['Code']
+
+    # Create DataFrames
+    # Alpha Vantage (Overview & Stock Price)
+    df_overview = get_df(Code, 'overview')
+    df_stockprice = get_df(Code, 'stockprice')
+    # Twitter
+    df_twitter = get_df(Code, 'twitter')
+    # News
+    df_newslist = get_df(Code, "news")
+
+    if len(df_overview) == 0 or len(df_stockprice) == 0:
+        list_overview = ["Alpha limit"]
+        div = ""
+        list_newslist = []
+        len_newslist = 0
     
+    elif any(list(df_twitter['Sentiment_Score'])) == False:
+        list_overview = ["Twitter limit"]
+        div = ""
+        list_newslist = []
+        len_newslist = 0
+
+    else:
+        list_overview = [df_overview.iloc[0,0], df_overview.iloc[0,1], df_overview.iloc[0,2], df_overview.iloc[0,3]]
+        data_stock = plot_stockprice(df_stockprice)
+        data_twitter = plot_twitter(df_twitter)
+
+        # Create graphs
+        fig = make_subplots(rows=1, cols=2, subplot_titles=("Stock Price", "Twitter Sentiment Score"))
+        fig.add_trace(data_stock, row=1, col=1)
+        fig.add_trace(data_twitter, row=1, col=2)
+        fig.update_layout(showlegend=False)
+        fig.update_yaxes(range=[-1, 1], row=1, col=2)
+        div = fig.to_html(full_html=False)
+
+        list_newslist = [df_newslist['Headline'].values.tolist(), df_newslist['URL'].values.tolist(), 
+        df_newslist['Sentiment_Score'].values.tolist()]
+        len_newslist = len(list_newslist[0])
+
+    create_database(df_overview, df_stockprice, df_twitter, df_newslist)
+    save_cache(CACHE_DICT)
+
+    return render_template('results.html', Code=Code, list_overview=list_overview,
+     div = div, list_newslist = list_newslist, len_newslist=len_newslist)
+
+if __name__ == "__main__":
+    CACHE_DICT = open_cache()
+    app.run(debug=True)
+
+ 
+
